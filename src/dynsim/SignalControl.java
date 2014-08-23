@@ -38,9 +38,10 @@ public class SignalControl {
         //fFilePath = Paths.get(aPathName);
         cycleLength = 120;
         amber = 6;
-        green2 = 54;
-        green3 = 34;
-        green4 = 24;
+        green2 = cycleLength/2-amber;
+        green3 = cycleLength/3-amber;
+        green4 = cycleLength/4-amber;
+        //To do: revise the following numbers
         maxGreen2 = 60;
         minGreen2 = 50;
         maxGreen3 = 40;
@@ -51,6 +52,42 @@ public class SignalControl {
     }
 
 
+    public boolean isEndOfRamp(int Node) throws IOException {
+        /*  This function returns true if <Node> is an end of a ramp
+            in the network, and returns false otherwise */
+        File file_network = new File(fFilePath + "\\network.dat");
+        try (Scanner scanner =  new Scanner(file_network)){
+            scanner.nextInt();
+            int NumberOfNodes = scanner.nextInt();
+            //skip the node-zone part
+            for (int i=0; i<NumberOfNodes; i++) {scanner.nextLine();}
+            
+            while (scanner.hasNextLine()){
+                scanner.nextLine();
+                if (!scanner.hasNextInt()) break;
+                scanner.nextInt();
+                //links (Ramps) to Node
+                if (scanner.nextInt() == Node) {
+                    scanner.nextInt();
+                    scanner.nextInt();
+                    scanner.nextInt();
+                    scanner.nextInt();
+                    scanner.nextInt();
+                    scanner.nextInt();
+                    scanner.nextInt();
+                    scanner.nextInt();
+                    scanner.nextInt();
+                    if (scanner.nextInt() == 3) {
+                        return true;
+                    }
+                }
+            }
+        } catch (IOException x) {
+            network.log("Error: IOException: " + x);
+        }
+        return false;
+    }
+    
     public int[] findConnectedNodes(int Node, boolean flag) throws IOException {
         File file_network = new File(fFilePath + "\\network.dat");
         int length = 0;
@@ -84,8 +121,8 @@ public class SignalControl {
                         scanner.nextInt();
                         scanner.nextInt();
                         if (scanner.nextInt() == 1) {
-//                            network.log("Warning: A sign/signal is specified on node "
-//                                    + Node + " that is connected to a freeway link");
+                            network.log("Warning: A sign/signal is specified on node "
+                                    + Node + " that is connected to a freeway link");
                             connectedNodes[0] = -1;
                             return connectedNodes;
                         }
@@ -108,8 +145,16 @@ public class SignalControl {
                         scanner.nextInt();
                         scanner.nextInt();
                         if (scanner.nextInt() == 1) {
-//                            network.log("Warning: A sign/signal is specified on node "
-//                                    + Node + " that is connected to a freeway link");
+                            //1=freeway
+                            network.log("Warning: A sign/signal is specified on node "
+                                    + Node + " that is connected to a freeway link");
+                            connectedNodes[0] = -1;
+                            return connectedNodes;
+                        } else if (scanner.nextInt() == 3) {
+                            //3=on-ramp
+                            //in our case, all ramps are encoded as on-ramps
+                            network.log("Warning: A sign/signal is specified on node "
+                                    + Node + " which is a start of a ramp");
                             connectedNodes[0] = -1;
                             return connectedNodes;
                         }
@@ -118,8 +163,10 @@ public class SignalControl {
             }
             if (length == 0) network.log("Error: Cannot find node " + Node + " in network.dat");
             connectedNodes[0] = length;
-            return connectedNodes;
+        } catch (IOException x) {
+            network.log("Error: IOException: " + x);
         }
+        return connectedNodes;
     }
 
     public float[] findNodeCoordinates(int Node) throws IOException {
@@ -139,6 +186,8 @@ public class SignalControl {
                     break;
                 }
             } while (true);
+        } catch (IOException x) {
+            network.log("Error: IOException: " + x);
         }
         return coordinates;
     }
@@ -226,10 +275,10 @@ public class SignalControl {
                     quarter2 =3;
                 }
             
-                if (mainNode.mainNode.getID() == 26830) {
-                    network.log("2 nodes: " + connectedNodes[1].getID() + "," + angle2);
-                    network.log("2 nodes: " + quarter2);
-                }
+//                if (mainNode.mainNode.getID() == 26830) {
+//                    network.log("2 nodes: " + connectedNodes[1].getID() + "," + angle2);
+//                    network.log("2 nodes: " + quarter2);
+//                }
                 
                 if (quarter1==quarter2) {
                     //if the 2 nodes lie in the same quarter, move one of them to another quarter
@@ -604,7 +653,11 @@ public class SignalControl {
     }
  
     public void addPretimedControl(MainNode mainNode, boolean advLeft) throws IOException {
-        if (mainNode.numberOfConnectedNodes == 2) {
+        if (mainNode.numberOfConnectedNodes_to == 1) {
+            network.log("Warning: Attempt to add pre-timed control to node "
+                    + mainNode.mainNode.label + " that has only one incoming approach");
+            return;
+        } else if (mainNode.numberOfConnectedNodes == 2) {
             network.log("Warning: Attempt to add pre-timed control to node "
                     + mainNode.mainNode.label + " that connects only two nodes");
             return;
@@ -617,11 +670,53 @@ public class SignalControl {
                     + mainNode.mainNode.label);
             return;
         }
+        
         Path file_control = Paths.get(fFilePath.toString(), "control.dat");
+        int NoOfPhases = 0;
+        //Calculate number of phases
+        if (advLeft) {
+            if ((mainNode.to_flag[0] && (mainNode.from_flag[2] || mainNode.from_flag[3])) || 
+                            (mainNode.to_flag[2] && (mainNode.from_flag[0] || mainNode.from_flag[1]))) {
+                NoOfPhases++;
+            }
+            if ((mainNode.to_flag[1] && (mainNode.from_flag[3] || mainNode.from_flag[0])) || 
+                            (mainNode.to_flag[3] && (mainNode.from_flag[1] || mainNode.from_flag[2]))) {
+                NoOfPhases++;
+            }
+            if ((mainNode.to_flag[0] && mainNode.from_flag[1]) || 
+                            (mainNode.to_flag[2] && mainNode.from_flag[3])) {
+                NoOfPhases++;
+            }
+            if ((mainNode.to_flag[1] && mainNode.from_flag[2]) || 
+                            (mainNode.to_flag[3] && mainNode.from_flag[0])) {
+                NoOfPhases++;
+            }
+        } else {
+            if ((mainNode.to_flag[0] && (mainNode.from_flag[1] || mainNode.from_flag[2] || mainNode.from_flag[3])) || 
+                            (mainNode.to_flag[2] && (mainNode.from_flag[3] || mainNode.from_flag[0] || mainNode.from_flag[1]))) {
+                NoOfPhases++;
+            }
+            if ((mainNode.to_flag[1] && (mainNode.from_flag[2] || mainNode.from_flag[3] || mainNode.from_flag[0])) || 
+                            (mainNode.to_flag[3] && (mainNode.from_flag[0] || mainNode.from_flag[1] || mainNode.from_flag[2]))) {
+                NoOfPhases++;
+            }
+        }
+        int green;
+        if (NoOfPhases==4)  green = green4;
+        else if (NoOfPhases==3)  green = green3;
+        else if (NoOfPhases==2)  green = green2;
+        else {
+            network.log("Error: cannot add pre-timed control to node "
+                    + mainNode.mainNode.label + ": invalid number of approaches");
+            return;
+        }
+        //int green = advLeft ? green4 : green2;
+        addPretimedControlHeader(mainNode, file_control.toFile(), NoOfPhases
+                , cycleLength);
+        
         String s;
         Charset charset = Charset.forName("US-ASCII");  //"UTF-8"
         int phaseNo = 1;
-        int green = advLeft ? green4 : green2;
         try (BufferedWriter writer = Files.newBufferedWriter(file_control, charset, StandardOpenOption.APPEND)) {
             
             for (int N=0; N<2; N++) {
@@ -674,8 +769,9 @@ public class SignalControl {
                     phaseNo++;
                 }
                 //Phase2 & 4: East-West & North-South
-                if ((mainNode.to_flag[N] && (mainNode.from_flag[(N+1)%4] || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))
-                        && (mainNode.to_flag[N+2] && (mainNode.from_flag[(N+3)%4] || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
+                //if through or RT or (LT and not adv LT) are available for the incoming approach
+                if ((mainNode.to_flag[N] && ((mainNode.from_flag[(N+1)%4] && (!advLeft)) || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))
+                        && (mainNode.to_flag[N+2] && ((mainNode.from_flag[(N+3)%4] && (!advLeft)) || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t"
                             + green + "\t" + amber + "\t2\t"
@@ -714,7 +810,7 @@ public class SignalControl {
                     writer.newLine();
                     
                     phaseNo++;
-                } else if ((mainNode.to_flag[N] && (mainNode.from_flag[(N+1)%4] || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))) {
+                } else if ((mainNode.to_flag[N] && ((mainNode.from_flag[(N+1)%4] && (!advLeft)) || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))) {
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t"
                             + green + "\t" + amber + "\t1\t"
@@ -737,7 +833,7 @@ public class SignalControl {
                     writer.newLine();
                     
                     phaseNo++;
-                } else if ((mainNode.to_flag[N+2] && (mainNode.from_flag[(N+3)%4] || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
+                } else if ((mainNode.to_flag[N+2] && ((mainNode.from_flag[(N+3)%4] && (!advLeft)) || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t"
                             + green + "\t" + amber + "\t1\t"
@@ -766,8 +862,6 @@ public class SignalControl {
         } catch (IOException x) {
             network.log("Error: IOException: " + x);
         }
-        addPretimedControlHeader(mainNode, file_control.toFile(), --phaseNo
-                , (green+amber)*phaseNo);
     }
     
     public void addActuatedControlHeader(MainNode mainNode, File file_control

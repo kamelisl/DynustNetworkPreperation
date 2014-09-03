@@ -97,6 +97,7 @@ public class DynSim {
         SignalControl signal_control = new SignalControl(network);
         int numberOfNodes = 0;
         boolean advance;
+        int number_of_added_signals = 0;
         //Get number of nodes needed to be controlled
         try (Scanner scanner =  new Scanner(input_file).useDelimiter("\t")){
             while (scanner.hasNextLine()){
@@ -139,7 +140,6 @@ public class DynSim {
                 if (scanner.hasNextLine()) scanner.nextLine();
                 else break;
             }
-            
             
             //Initialize array of nodes
             MainNode[] Nodes = new MainNode[numberOfNodes];
@@ -293,7 +293,8 @@ public class DynSim {
                     case 3: signal_control.add4WayStop(tempNode);
                             break;
                     //Pre-timed Control
-                    case 4: signal_control.addPretimedControl(tempNode, advance);
+                    case 4: if (signal_control.addPretimedControl(tempNode, advance))
+                                number_of_added_signals++;
                             break;
                     //Actuated Control
                     case 5: signal_control.addActuatedControl(tempNode, advance);
@@ -310,6 +311,7 @@ public class DynSim {
             network.log("Error: Cannot open " + input_file);
             return false;
         }
+        network.log(number_of_added_signals + " signals were added out of " + numberOfNodes);
         network.log("Done (Adding Signal Control)");
         return true;
     }

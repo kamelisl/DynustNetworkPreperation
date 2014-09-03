@@ -36,8 +36,8 @@ public class SignalControl {
         maxConnectedNodes = 4;
         fFilePath = Paths.get(aNetwork.getPath().toString());
         //fFilePath = Paths.get(aPathName);
-        cycleLength = 120;
-        amber = 6;
+        cycleLength = 100;
+        amber = 5;
         green2 = cycleLength/2-amber;
         green3 = cycleLength/3-amber;
         green4 = cycleLength/4-amber;
@@ -120,7 +120,8 @@ public class SignalControl {
                         scanner.nextInt();
                         scanner.nextInt();
                         scanner.nextInt();
-                        if (scanner.nextInt() == 1) {
+                        int type = scanner.nextInt();
+                        if (type == 1) {
                             network.log("Warning: A sign/signal is specified on node "
                                     + Node + " that is connected to a freeway link");
                             connectedNodes[0] = -1;
@@ -144,13 +145,14 @@ public class SignalControl {
                         scanner.nextInt();
                         scanner.nextInt();
                         scanner.nextInt();
-                        if (scanner.nextInt() == 1) {
+                        int type = scanner.nextInt();
+                        if (type == 1) {
                             //1=freeway
                             network.log("Warning: A sign/signal is specified on node "
                                     + Node + " that is connected to a freeway link");
                             connectedNodes[0] = -1;
                             return connectedNodes;
-                        } else if (scanner.nextInt() == 3) {
+                        } else if (type == 3) {
                             //3=on-ramp
                             //in our case, all ramps are encoded as on-ramps
                             network.log("Warning: A sign/signal is specified on node "
@@ -925,66 +927,71 @@ public class SignalControl {
         }
     }
  
-    public void addPretimedControl(MainNode mainNode, boolean advLeft) throws IOException {
+    public boolean addPretimedControl(MainNode mainNode, boolean advLeft) throws IOException {
         if (mainNode.numberOfConnectedNodes_to == 1) {
             network.log("Warning: Attempt to add pre-timed control to node "
                     + mainNode.mainNode.label + " that has only one incoming approach");
-            return;
+            return false;
         } else if (mainNode.numberOfConnectedNodes == 2) {
             network.log("Warning: Attempt to add pre-timed control to node "
                     + mainNode.mainNode.label + " that connects only two nodes");
-            return;
+            return false;
         } else if (mainNode.numberOfConnectedNodes == 1) {
             network.log("Warning: Attempt to add pre-timed control to node "
                     + mainNode.mainNode.label + " that is connected only to one node");
-            return;
+            return false;
         } else if (mainNode.numberOfConnectedNodes == 0) {
             network.log("Warning: Attempt to add pre-timed control to a floating node "
                     + mainNode.mainNode.label);
-            return;
+            return false;
         }
         
         Path file_control = Paths.get(fFilePath.toString(), "control.dat");
         int NoOfPhases = 0;
+        int NoOfRegPhases = 0;
+        int NoOfAdvLTPhases = 0;
+        boolean[] phase_flag = new boolean[] {false,false,false,false};
         //Calculate number of phases
         if (advLeft) {
             //Adv_left
-            if ((mainNode.to_flag[0] && mainNode.from_flag[1] && mainNode.to_flag[2]) || 
-                            (mainNode.to_flag[2] && mainNode.from_flag[3] && mainNode.to_flag[0])) {
+            if ((mainNode.to_flag[0] && mainNode.from_flag[1] && mainNode.to_flag[2] && (mainNode.from_flag[2] || mainNode.from_flag[3])) || 
+                            (mainNode.to_flag[2] && mainNode.from_flag[3] && mainNode.to_flag[0] && (mainNode.from_flag[0] || mainNode.from_flag[1]))) {
                 NoOfPhases++;
+                NoOfAdvLTPhases++;
+                phase_flag[0] = true;
             }
-            if ((mainNode.to_flag[1] && mainNode.from_flag[2] && mainNode.to_flag[3]) || 
-                            (mainNode.to_flag[3] && mainNode.from_flag[0] && mainNode.to_flag[1])) {
+            if ((mainNode.to_flag[1] && mainNode.from_flag[2] && mainNode.to_flag[3] && (mainNode.from_flag[3] || mainNode.from_flag[0])) || 
+                            (mainNode.to_flag[3] && mainNode.from_flag[0] && mainNode.to_flag[1]) && (mainNode.from_flag[1] || mainNode.from_flag[2])) {
                 NoOfPhases++;
-            }
-            
-            if ((mainNode.to_flag[0] && ((mainNode.from_flag[1] && !mainNode.to_flag[2]) || mainNode.from_flag[2] || mainNode.from_flag[3])) || 
-                            (mainNode.to_flag[2] && ((mainNode.from_flag[3] && !mainNode.to_flag[0]) || mainNode.from_flag[0] || mainNode.from_flag[1]))) {
-                NoOfPhases++;
-            }
-            if ((mainNode.to_flag[1] && ((mainNode.from_flag[2] && !mainNode.to_flag[3]) || mainNode.from_flag[3] || mainNode.from_flag[0])) || 
-                            (mainNode.to_flag[3] && ((mainNode.from_flag[0] && !mainNode.to_flag[1]) || mainNode.from_flag[1] || mainNode.from_flag[2]))) {
-                NoOfPhases++;
-            }
-        } else {
-            if ((mainNode.to_flag[0] && (mainNode.from_flag[1] || mainNode.from_flag[2] || mainNode.from_flag[3])) || 
-                            (mainNode.to_flag[2] && (mainNode.from_flag[3] || mainNode.from_flag[0] || mainNode.from_flag[1]))) {
-                NoOfPhases++;
-            }
-            if ((mainNode.to_flag[1] && (mainNode.from_flag[2] || mainNode.from_flag[3] || mainNode.from_flag[0])) || 
-                            (mainNode.to_flag[3] && (mainNode.from_flag[0] || mainNode.from_flag[1] || mainNode.from_flag[2]))) {
-                NoOfPhases++;
+                NoOfAdvLTPhases++;
+                phase_flag[2] = true;
             }
         }
-        int green;
-        if (NoOfPhases==4)  green = green4;
-        else if (NoOfPhases==3)  green = green3;
-        else if (NoOfPhases==2)  green = green2;
-        else {
-            network.log("Error: cannot add pre-timed control to node "
-                    + mainNode.mainNode.label + ": invalid number of approaches");
-            return;
+        if ((mainNode.to_flag[0] && (mainNode.from_flag[1] || mainNode.from_flag[2] || mainNode.from_flag[3])) || 
+                        (mainNode.to_flag[2] && (mainNode.from_flag[3] || mainNode.from_flag[0] || mainNode.from_flag[1]))) {
+            NoOfPhases++;
+            NoOfRegPhases++;
+            phase_flag[1] = true;
         }
+        if ((mainNode.to_flag[1] && (mainNode.from_flag[2] || mainNode.from_flag[3] || mainNode.from_flag[0])) || 
+                        (mainNode.to_flag[3] && (mainNode.from_flag[0] || mainNode.from_flag[1] || mainNode.from_flag[2]))) {
+            NoOfPhases++;
+            NoOfRegPhases++;
+            phase_flag[3] = true;
+        }
+        if (NoOfRegPhases<2)    return false;
+        int amber = 5;
+        int green_ALT = 10;
+        int green = (cycleLength - NoOfAdvLTPhases*green_ALT - NoOfPhases*amber)/NoOfRegPhases;
+//        int green;
+//        if (NoOfPhases==4)  green = green4;
+//        else if (NoOfPhases==3)  green = green3;
+//        else if (NoOfPhases==2)  green = green2;
+//        else {
+//            network.log("Error: cannot add pre-timed control to node "
+//                    + mainNode.mainNode.label + ": invalid number of approaches");
+//            return false;
+//        }
         //int green = advLeft ? green4 : green2;
         addPretimedControlHeader(mainNode, file_control.toFile(), NoOfPhases
                 , cycleLength);
@@ -995,15 +1002,13 @@ public class SignalControl {
         try (BufferedWriter writer = Files.newBufferedWriter(file_control, charset, StandardOpenOption.APPEND)) {
             
             for (int N=0; N<2; N++) {
-//                if (advLeft && (mainNode.maxNoOfConnectedNodes!=phaseNo) &&
-//                        ((mainNode.to_flag[N] && mainNode.from_flag[(N+1)%4]) || 
-//                        (mainNode.to_flag[(N+2)%4] && mainNode.from_flag[(N+3)%4]))) {
-                if (advLeft && 
-                        ((mainNode.to_flag[N] && mainNode.from_flag[(N+1)%4] && mainNode.to_flag[(N+2)%4]) || 
-                        (mainNode.to_flag[(N+2)%4] && mainNode.from_flag[(N+3)%4] && mainNode.to_flag[N]))) {
+//                if (advLeft && 
+//                        ((mainNode.to_flag[N] && mainNode.from_flag[(N+1)%4] && mainNode.to_flag[(N+2)%4]) || 
+//                        (mainNode.to_flag[(N+2)%4] && mainNode.from_flag[(N+3)%4] && mainNode.to_flag[N]))) {
+                if (phase_flag[N*2]) {
                     //Phase1 & 3: Advanced Left (East-West & North-South)
                     s = "\t" +  mainNode.mainNode.label + "\t"
-                            + phaseNo + "\t" + offset + "\t" + green
+                            + phaseNo + "\t" + offset + "\t" + green_ALT
                             + "\t" + amber + "\t";
                     //the two LT's allowed or only one
                     if ((mainNode.to_flag[N] && mainNode.from_flag[(N+1)%4]) && 
@@ -1048,8 +1053,9 @@ public class SignalControl {
                 }
                 //Phase2 & 4: East-West & North-South
                 //if through or RT or (LT and not adv LT) are available for the incoming approach
-                if ((mainNode.to_flag[N] && ((mainNode.from_flag[(N+1)%4] && !(advLeft && mainNode.to_flag[(N+2)%4])) || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))
-                        && (mainNode.to_flag[N+2] && ((mainNode.from_flag[(N+3)%4] && !(advLeft && mainNode.to_flag[N])) || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
+//                if ((mainNode.to_flag[N] && ((mainNode.from_flag[(N+1)%4] && !(advLeft && mainNode.to_flag[(N+2)%4])) || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))
+//                        && (mainNode.to_flag[N+2] && ((mainNode.from_flag[(N+3)%4] && !(advLeft && mainNode.to_flag[N])) || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
+                if (phase_flag[N*2+1] && mainNode.to_flag[N] && mainNode.to_flag[N+2]) {    
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t"
                             + green + "\t" + amber + "\t2\t"
@@ -1088,7 +1094,7 @@ public class SignalControl {
                     writer.newLine();
                     
                     phaseNo++;
-                } else if ((mainNode.to_flag[N] && ((mainNode.from_flag[(N+1)%4] && !(advLeft && mainNode.to_flag[(N+2)%4])) || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))) {
+                } else if (phase_flag[N*2+1] && mainNode.to_flag[N]) {
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t"
                             + green + "\t" + amber + "\t1\t"
@@ -1111,7 +1117,7 @@ public class SignalControl {
                     writer.newLine();
                     
                     phaseNo++;
-                } else if ((mainNode.to_flag[N+2] && ((mainNode.from_flag[(N+3)%4] && !(advLeft && mainNode.to_flag[N])) || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
+                } else if (phase_flag[N*2+1] && mainNode.to_flag[N+2]) {
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t"
                             + green + "\t" + amber + "\t1\t"
@@ -1136,10 +1142,10 @@ public class SignalControl {
                     phaseNo++;
                 }
             }
-            
         } catch (IOException x) {
             network.log("Error: IOException: " + x);
         }
+        return true;
     }
     
     public void addActuatedControlHeader(MainNode mainNode, File file_control

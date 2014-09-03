@@ -222,7 +222,7 @@ public class SignalControl {
         }
     }
     
-    public void arrangeConnectedNodes(MainNode mainNode, boolean  flag) throws IOException {
+    public boolean arrangeConnectedNodes2(MainNode mainNode) throws IOException {
         /*----------------------------------------------------------------------
         Arrange the connected nodes to be:
                    (North)
@@ -231,8 +231,281 @@ public class SignalControl {
                       1
         If connected nodes=3: find the two nodes that are most likely to
         be aligned (regardless of their orientation)
+        Args:   mainNode    : the signalized node
+        It calls arrangeConnectedNodes()
         ----------------------------------------------------------------------*/
-        //if (mainNode.numberOfConnectedNodes<3)  return;
+        
+        int numberOfConnectedNodes;
+        //Node[] connectedNodes;
+        Node[] refNodes;
+        boolean[] refFlag;
+        if (mainNode.numberOfConnectedNodes_to >= mainNode.numberOfConnectedNodes_from) {
+            arrangeConnectedNodes(mainNode, true);
+            numberOfConnectedNodes = mainNode.numberOfConnectedNodes_from;
+            //connectedNodes = mainNode.from;
+            refNodes = mainNode.to;
+            refFlag = mainNode.to_flag;
+        } else {
+            arrangeConnectedNodes(mainNode, false);
+            numberOfConnectedNodes = mainNode.numberOfConnectedNodes_to;
+            //connectedNodes = mainNode.to;
+            refNodes = mainNode.from;
+            refFlag = mainNode.from_flag;
+        }
+        if (numberOfConnectedNodes == 0)    return true;
+        Node[] connectedNodes = new Node[numberOfConnectedNodes];
+        if (mainNode.numberOfConnectedNodes_to >= mainNode.numberOfConnectedNodes_from) {
+            for (int i=0; i<numberOfConnectedNodes; i++)
+                connectedNodes[i] = mainNode.from[i];
+        } else {
+            for (int i=0; i<numberOfConnectedNodes; i++)
+                connectedNodes[i] = mainNode.to[i];
+        }
+        
+        
+        //Array of angles of points measured clockwise from pi/4
+        double[] angle = new double[numberOfConnectedNodes];
+        double x_diff, y_diff;
+        //Array of points indices sorted in ascending order by angle
+        int[] sortedPoints = new int[numberOfConnectedNodes];
+        //Array of flags for each quarter:
+        // -1   : a common point which can't be moved to another quarter
+        //  0   : no points in this quarter
+        // +1   : a point that may be moved into another quarter
+        int[] flag = new int[] {0,0,0,0};
+        //Array stores quarter of each node
+        int[] quarter = new int[numberOfConnectedNodes];
+        
+        //Find angle of each node
+        for (int i=0; i<numberOfConnectedNodes; i++) {
+            x_diff = connectedNodes[i].get_x() - mainNode.mainNode.get_x();
+            y_diff = connectedNodes[i].get_y() - mainNode.mainNode.get_y();
+            angle[i] = Math.acos(x_diff/Math.hypot(x_diff, y_diff));
+            if (y_diff>0)   angle[i] = 2*Math.PI-angle[i];
+            angle[i] = (angle[i]+Math.PI/4)%(2*Math.PI);    //angle measured wrt pi/4
+            //initialize sortedPoints
+            sortedPoints[i] = i;
+        }
+        //Sort points wrt their angles (ascending order)
+        for (int i=0; i<numberOfConnectedNodes; i++) {
+            for (int j=numberOfConnectedNodes-1; j>i; j--) {
+                if (angle[j] < angle[j-1]) {
+                    double temp1 = angle[j];
+                    angle[j] = angle[j-1];
+                    angle[j-1] = temp1;
+                    int temp2 = sortedPoints[j];
+                    sortedPoints[j] = sortedPoints[j-1];
+                    sortedPoints[j-1] = temp2;
+                }
+            }
+        }
+        //Locate each node in one of the four quarters
+        int currentQuarter = 0;
+        for (int i=0; i<numberOfConnectedNodes; i++) {
+            //search for this node in the other to/from array
+            int j;
+            for (j=0; j<4; j++) {
+                if (refFlag[j] && (connectedNodes[sortedPoints[i]].getID() == refNodes[j].getID())) {
+                    if (flag[j] == 1) {
+                        //move backward
+                        //move the existing point to the previous quarter
+                        if (flag[(j-1+4)%4] == -1) {
+                            return false;
+                        } else if (flag[(j-1+4)%4] == 1) {
+                            if (flag[(j-2+4)%4] == -1) {
+                                return false;
+                            } else if (flag[(j-2+4)%4] == 1) {
+                                quarter[sortedPoints[i-3]] = (j-3+4)%4;
+                                flag[(j-3+4)%4] = 1;
+                            }
+                            quarter[sortedPoints[i-2]] = (j-2+4)%4;
+                            flag[(j-2+4)%4] = 1;
+                        }
+                        quarter[sortedPoints[i-1]] = (j-1+4)%4;
+                        flag[(j-1+4)%4] = 1;
+                    }
+                    quarter[sortedPoints[i]] = j;
+                    flag[j] = -1;
+                    currentQuarter = j+1;
+                    break;
+                }
+            }
+            if (j<4)    continue;   //point was found in the other to/from array
+            if ((currentQuarter<1) && (angle[i]<0.5*Math.PI)) {
+                if (flag[0] == 1) {
+                    if (Math.abs(angle[i]-Math.PI/4) > Math.abs(angle[i-1]-Math.PI/4)) {
+                        //move forward
+                        quarter[sortedPoints[i]] = 1;
+                        flag[1] = 1;
+                    } else {
+                        //move backward
+                        quarter[sortedPoints[i]] = 0;
+                        flag[0] = 1;
+                        quarter[sortedPoints[i-1]] = 3;
+                        flag[3] = 1;
+                    }
+                } else {
+                    quarter[sortedPoints[i]] = 0;
+                    flag[0] = 1;
+                }
+            } else if ((currentQuarter<2) && (angle[i]<Math.PI)) {
+                if (flag[1] == 1) {
+                    if (currentQuarter == 1) {
+                        //move forward
+                        quarter[sortedPoints[i]] = 2;
+                        flag[2] = 1;
+                        currentQuarter = 3; //fixed point at quarter 0 followed by two arbitrary points
+                    } else if (Math.abs(angle[i]-3*Math.PI/4) > Math.abs(angle[i-1]-3*Math.PI/4)) {
+                        //move forward
+                        quarter[sortedPoints[i]] = 2;
+                        flag[2] = 1;
+                    } else {
+                        //move backward
+                        quarter[sortedPoints[i]] = 1;
+                        flag[1] = 1;
+                        if (flag[0] == 1) {
+                            quarter[sortedPoints[i-2]] = 3;
+                            flag[3] = 1;
+                        }
+                        quarter[sortedPoints[i-1]] = 0;
+                        flag[0] = 1;
+                    }
+                } else {
+                    quarter[sortedPoints[i]] = 1;
+                    flag[1] = 1;
+                    if (currentQuarter == 1) {
+                        currentQuarter = 2; //fixed point at quarter 0 followed by an arbitrary point
+                    }
+                }
+            } else if ((currentQuarter<3) && (angle[i]<1.5*Math.PI)) {
+                if (flag[2] == 1) {
+                    if (currentQuarter == 2) {
+                        //move forward
+                        quarter[sortedPoints[i]] = 3;
+                        flag[3] = 1;
+                        currentQuarter = 4; //Can't do any further backward movements
+                    } else if (Math.abs(angle[i]-5*Math.PI/4) > Math.abs(angle[i-1]-5*Math.PI/4)){
+                        //move forward
+                        quarter[sortedPoints[i]] = 3;
+                        flag[3] = 1;
+                        //There are still more available backward movements
+                    } else {
+                        //move backward
+                        quarter[sortedPoints[i]] = 2;
+                        flag[2] = 1;
+                        if (flag[1] == 1) {
+                            if (flag[0] == 1) {
+                                quarter[sortedPoints[i-3]] = 3;
+                                flag[3] = 1;
+                            }
+                            quarter[sortedPoints[i-2]] = 0;
+                            flag[0] = 1;
+                        }
+                        quarter[sortedPoints[i-1]] = 1;
+                        flag[1] = 1;
+                        if (currentQuarter == 1) {
+                            currentQuarter = 3; //Can't do any further backward movements
+                                                //only the 4th quarter still empty
+                        }
+                    }
+                } else {
+                    quarter[sortedPoints[i]] = 2;
+                    flag[2] = 1;
+                    if (currentQuarter == 2) {
+                        currentQuarter = 3; //Can't do any further backward movements
+                                            //only the 4th quarter still empty
+                    }
+                }
+            } else {
+                if ((currentQuarter == 4) || ((flag[3] == 1) && (currentQuarter == 3))) {
+                    //move forward
+                    if (flag[0] == -1) {
+                        return false;
+                    } else if (flag[0] == 1) {
+                        if (flag[1] == -1) {
+                            return false;
+                        } else if (flag[1] == 1) {
+                            if (flag[2] == 0) {
+                                quarter[sortedPoints[1]] = 2;
+                                flag[2] = 1;
+                            } else {
+                                return false;
+                            }
+                        }
+                        quarter[sortedPoints[0]] = 1;
+                        flag[1] = 1;
+                    }
+                    quarter[sortedPoints[i]] = 0;
+                    flag[0] = 1;
+                    //Should terminate
+                } else if (flag[3] == 1) {
+                    //move backward
+                    if (flag[2] == 1) {
+                        if (flag[1] == 1) {
+                            quarter[sortedPoints[i-3]] = 0;
+                            flag[0] = 1;
+                            currentQuarter = 4; //Can't do any further backward movements
+                        }
+                        quarter[sortedPoints[i-2]] = 1;
+                        flag[1] = 1;
+                        if (currentQuarter == 1) {
+                            currentQuarter = 4; //Can't do any further backward movements
+                        }
+                    }
+                    quarter[sortedPoints[i-1]] = 2;
+                    flag[2] = 1;
+                    quarter[sortedPoints[i]] = 3;
+                    flag[3] = 1;
+                    if (currentQuarter == 2) {
+                        currentQuarter = 4; //Can't do any further backward movements
+                    }
+                } else {
+                    quarter[sortedPoints[i]] = 3;
+                    flag[3] = 1;
+                    if (currentQuarter == 3) {
+                        currentQuarter = 4; //Can't do any further backward movements
+                    }
+                }
+            }
+        }
+        
+        if (mainNode.numberOfConnectedNodes_to >= mainNode.numberOfConnectedNodes_from) {
+            for (int i=0; i<4; i++) {
+                mainNode.from_flag[i] = false;
+            }
+            for (int i=0; i<numberOfConnectedNodes; i++) {
+                mainNode.from[quarter[i]] = connectedNodes[i];
+                mainNode.from_flag[quarter[i]] = true;
+            }
+        } else {
+            for (int i=0; i<4; i++) {
+                mainNode.to_flag[i] = false;
+            }
+            for (int i=0; i<numberOfConnectedNodes; i++) {
+                mainNode.to[quarter[i]] = connectedNodes[i];
+                mainNode.to_flag[quarter[i]] = true;
+            }
+        }
+        return true;
+    }
+    
+    public void arrangeConnectedNodes(MainNode mainNode, boolean  flag) throws IOException {
+        /*----------------------------------------------------------------------
+        MUST be called after calling findConnectedNodes()
+        Arrange the connected nodes to be:
+                   (North)
+                      3
+                  2       0
+                      1
+        If connected nodes=3: find the two nodes that are most likely to
+        be aligned (regardless of their orientation)
+        Args:   mainNode    : the signalized node
+                flag        : if TRUE, arrange approaches to mainNode; otherwise
+                              arrange approaches from mainNode
+                matchPrevResult: if TRUE, use previous results to find nodes'
+                                 orientation
+        ----------------------------------------------------------------------*/
+        //TO DO: use "identifying quarters" in all cases including 3 and 4 nodes
         double D = 1000000;
         double Dij, Dim, Dmj, x, y;
         int temp1=0, temp2=1;
@@ -675,20 +948,22 @@ public class SignalControl {
         int NoOfPhases = 0;
         //Calculate number of phases
         if (advLeft) {
-            if ((mainNode.to_flag[0] && (mainNode.from_flag[2] || mainNode.from_flag[3])) || 
-                            (mainNode.to_flag[2] && (mainNode.from_flag[0] || mainNode.from_flag[1]))) {
+            //Adv_left
+            if ((mainNode.to_flag[0] && mainNode.from_flag[1] && mainNode.to_flag[2]) || 
+                            (mainNode.to_flag[2] && mainNode.from_flag[3] && mainNode.to_flag[0])) {
                 NoOfPhases++;
             }
-            if ((mainNode.to_flag[1] && (mainNode.from_flag[3] || mainNode.from_flag[0])) || 
-                            (mainNode.to_flag[3] && (mainNode.from_flag[1] || mainNode.from_flag[2]))) {
+            if ((mainNode.to_flag[1] && mainNode.from_flag[2] && mainNode.to_flag[3]) || 
+                            (mainNode.to_flag[3] && mainNode.from_flag[0] && mainNode.to_flag[1])) {
                 NoOfPhases++;
             }
-            if ((mainNode.to_flag[0] && mainNode.from_flag[1]) || 
-                            (mainNode.to_flag[2] && mainNode.from_flag[3])) {
+            
+            if ((mainNode.to_flag[0] && ((mainNode.from_flag[1] && !mainNode.to_flag[2]) || mainNode.from_flag[2] || mainNode.from_flag[3])) || 
+                            (mainNode.to_flag[2] && ((mainNode.from_flag[3] && !mainNode.to_flag[0]) || mainNode.from_flag[0] || mainNode.from_flag[1]))) {
                 NoOfPhases++;
             }
-            if ((mainNode.to_flag[1] && mainNode.from_flag[2]) || 
-                            (mainNode.to_flag[3] && mainNode.from_flag[0])) {
+            if ((mainNode.to_flag[1] && ((mainNode.from_flag[2] && !mainNode.to_flag[3]) || mainNode.from_flag[3] || mainNode.from_flag[0])) || 
+                            (mainNode.to_flag[3] && ((mainNode.from_flag[0] && !mainNode.to_flag[1]) || mainNode.from_flag[1] || mainNode.from_flag[2]))) {
                 NoOfPhases++;
             }
         } else {
@@ -720,9 +995,12 @@ public class SignalControl {
         try (BufferedWriter writer = Files.newBufferedWriter(file_control, charset, StandardOpenOption.APPEND)) {
             
             for (int N=0; N<2; N++) {
-                if (advLeft && (mainNode.maxNoOfConnectedNodes!=phaseNo) &&
-                        ((mainNode.to_flag[N] && mainNode.from_flag[(N+1)%4]) || 
-                        (mainNode.to_flag[(N+2)%4] && mainNode.from_flag[(N+3)%4]))) {
+//                if (advLeft && (mainNode.maxNoOfConnectedNodes!=phaseNo) &&
+//                        ((mainNode.to_flag[N] && mainNode.from_flag[(N+1)%4]) || 
+//                        (mainNode.to_flag[(N+2)%4] && mainNode.from_flag[(N+3)%4]))) {
+                if (advLeft && 
+                        ((mainNode.to_flag[N] && mainNode.from_flag[(N+1)%4] && mainNode.to_flag[(N+2)%4]) || 
+                        (mainNode.to_flag[(N+2)%4] && mainNode.from_flag[(N+3)%4] && mainNode.to_flag[N]))) {
                     //Phase1 & 3: Advanced Left (East-West & North-South)
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t" + green
@@ -770,8 +1048,8 @@ public class SignalControl {
                 }
                 //Phase2 & 4: East-West & North-South
                 //if through or RT or (LT and not adv LT) are available for the incoming approach
-                if ((mainNode.to_flag[N] && ((mainNode.from_flag[(N+1)%4] && (!advLeft)) || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))
-                        && (mainNode.to_flag[N+2] && ((mainNode.from_flag[(N+3)%4] && (!advLeft)) || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
+                if ((mainNode.to_flag[N] && ((mainNode.from_flag[(N+1)%4] && !(advLeft && mainNode.to_flag[(N+2)%4])) || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))
+                        && (mainNode.to_flag[N+2] && ((mainNode.from_flag[(N+3)%4] && !(advLeft && mainNode.to_flag[N])) || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t"
                             + green + "\t" + amber + "\t2\t"
@@ -810,7 +1088,7 @@ public class SignalControl {
                     writer.newLine();
                     
                     phaseNo++;
-                } else if ((mainNode.to_flag[N] && ((mainNode.from_flag[(N+1)%4] && (!advLeft)) || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))) {
+                } else if ((mainNode.to_flag[N] && ((mainNode.from_flag[(N+1)%4] && !(advLeft && mainNode.to_flag[(N+2)%4])) || mainNode.from_flag[(N+2)%4] || mainNode.from_flag[(N+3)%4]))) {
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t"
                             + green + "\t" + amber + "\t1\t"
@@ -833,7 +1111,7 @@ public class SignalControl {
                     writer.newLine();
                     
                     phaseNo++;
-                } else if ((mainNode.to_flag[N+2] && ((mainNode.from_flag[(N+3)%4] && (!advLeft)) || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
+                } else if ((mainNode.to_flag[N+2] && ((mainNode.from_flag[(N+3)%4] && !(advLeft && mainNode.to_flag[N])) || mainNode.from_flag[(N+4)%4] || mainNode.from_flag[(N+5)%4]))) {
                     s = "\t" +  mainNode.mainNode.label + "\t"
                             + phaseNo + "\t" + offset + "\t"
                             + green + "\t" + amber + "\t1\t"

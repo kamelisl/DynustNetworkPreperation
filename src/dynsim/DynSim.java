@@ -147,8 +147,10 @@ public class DynSim {
             signal_control.initControlFile();
             for (int i=0; i<Nodes.length; i++) {
                 //To do: don't need to get and store zone of each node
-                MainNode tempNode = new MainNode(new Node(nodes_control_adv[i][0],
-                        signal_control.findNodeZone(nodes_control_adv[i][0]),
+//                MainNode tempNode = new MainNode(new Node(nodes_control_adv[i][0],
+//                        signal_control.findNodeZone(nodes_control_adv[i][0]),
+//                        signal_control.findNodeCoordinates(nodes_control_adv[i][0])), network);
+                MainNode tempNode = new MainNode(new Node(nodes_control_adv[i][0], 1,
                         signal_control.findNodeCoordinates(nodes_control_adv[i][0])), network);
                 Nodes[i] = tempNode;
                 //Find connected nodes (to) main node---------------------------
@@ -158,8 +160,10 @@ public class DynSim {
                 if ((connectedNodes[0] == -1) || (connectedNodes[0] == 1))    continue;
                 //Find coordinates of connected nodes and add them to the MainNode
                 for (int j=1; j <= connectedNodes[0]; j++) {
-                    Nodes[i].AddConnectedNode(new Node(connectedNodes[j],
-                            signal_control.findNodeZone(connectedNodes[j]),
+//                    Nodes[i].AddConnectedNode(new Node(connectedNodes[j],
+//                            signal_control.findNodeZone(connectedNodes[j]),
+//                            signal_control.findNodeCoordinates(connectedNodes[j])),true);
+                    Nodes[i].AddConnectedNode(new Node(connectedNodes[j], 1,
                             signal_control.findNodeCoordinates(connectedNodes[j])),true);
                 }
                 //Find connected nodes (from) main node
@@ -169,8 +173,10 @@ public class DynSim {
                 if (connectedNodes[0] == -1)    continue;
                 //Find coordinates of connected nodes and add them to the MainNode
                 for (int j=1; j <= connectedNodes[0]; j++) {
-                    Nodes[i].AddConnectedNode(new Node(connectedNodes[j],
-                            signal_control.findNodeZone(connectedNodes[j]),
+//                    Nodes[i].AddConnectedNode(new Node(connectedNodes[j],
+//                            signal_control.findNodeZone(connectedNodes[j]),
+//                            signal_control.findNodeCoordinates(connectedNodes[j])),false);
+                    Nodes[i].AddConnectedNode(new Node(connectedNodes[j], 1,
                             signal_control.findNodeCoordinates(connectedNodes[j])),false);
                 }
                 //--------------------------------------------------------------
@@ -197,11 +203,41 @@ public class DynSim {
                     }
                 }
                 
+                //Nodes[i].maxNoOfConnectedNodes = Nodes[i].numberOfConnectedNodes;
+                int NoOfCommonNodes = 0;
+                for (int j=0; j<Nodes[i].numberOfConnectedNodes_to; j++) {
+                    for (int k=0; k<Nodes[i].numberOfConnectedNodes_from; k++) {
+                        if (Nodes[i].to[j].getID()==Nodes[i].from[k].getID()) {
+                            NoOfCommonNodes++;
+                            break;
+                        }
+                    }
+                }
                 
-                Nodes[i].maxNoOfConnectedNodes = Nodes[i].numberOfConnectedNodes;
-                signal_control.arrangeConnectedNodes(tempNode, true);
-                signal_control.arrangeConnectedNodes(tempNode, false);
+                if ((NoOfCommonNodes==Nodes[i].numberOfConnectedNodes_to) &&
+                        (NoOfCommonNodes==Nodes[i].numberOfConnectedNodes_from)) {
+                    signal_control.arrangeConnectedNodes(tempNode, true);
+                    Nodes[i].from = Nodes[i].to;
+                    Nodes[i].from_flag = Nodes[i].to_flag;
+                } else {
+                    //signal_control.arrangeConnectedNodes(tempNode, true);
+                    //signal_control.arrangeConnectedNodes(tempNode, false);
+                    if (!signal_control.arrangeConnectedNodes2(tempNode)) {
+                        network.log("Error: cannot arrange connected nodes to node: "
+                                + Nodes[i].mainNode.label);
+                        continue;
+                    }
+                }
+//                //Just for DEBUG
+//                for (int j=0; j<4; j++) {
+//                    network.log("Node: " + Nodes[i].mainNode.getID());
+//                    network.log("to:" + Nodes[i].to_flag[j]);
+//                    if (Nodes[i].to_flag[j]) network.log(";" + Nodes[i].to[j].getID());
+//                    network.log("from:" + Nodes[i].from_flag[j]);
+//                    if (Nodes[i].from_flag[j]) network.log(";" + Nodes[i].from[j].getID());
+//                }//End of DEBUG
                                 
+                //Number of approaches to/from the signalized node
                 Nodes[i].numberOfConnectedNodes = ((Nodes[i].from_flag[0] || Nodes[i].to_flag[0]) ? 1:0)
                             + ((Nodes[i].from_flag[1] || Nodes[i].to_flag[1]) ? 1:0)
                             + ((Nodes[i].from_flag[2] || Nodes[i].to_flag[2]) ? 1:0)
